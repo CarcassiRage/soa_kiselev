@@ -1,0 +1,32 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: mark
+      POSTGRES_PASSWORD: 123
+      POSTGRES_DB: hw2
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mark -d hw2"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+
+  migrate:
+    image: flyway/flyway:11
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./migrations:/flyway/sql:ro
+    command:
+      - -url=jdbc:postgresql://postgres:5432/hw2
+      - -user=mark
+      - -password=123
+      - migrate
+
+volumes:
+  postgres_data:
