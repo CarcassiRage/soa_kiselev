@@ -1,0 +1,93 @@
+services:
+  flight-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: flight
+      POSTGRES_PASSWORD: flight
+      POSTGRES_DB: flight
+      TZ: UTC
+    volumes:
+      - flight-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flight -d flight"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  booking-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: booking
+      POSTGRES_PASSWORD: booking
+      POSTGRES_DB: booking
+      TZ: UTC
+    volumes:
+      - booking-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U booking -d booking"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  flight-migrate:
+    image: flyway/flyway:11
+    environment:
+      FLYWAY_URL: jdbc:postgresql://flight-db:5432/flight
+      FLYWAY_USER: flight
+      FLYWAY_PASSWORD: flight
+    volumes:
+      - ./migrations/flight:/flyway/sql:ro
+    command: ["migrate"]
+    depends_on:
+      flight-db:
+        condition: service_healthy
+
+  booking-migrate:
+    image: flyway/flyway:11
+    environment:
+      FLYWAY_URL: jdbc:postgresql://booking-db:5432/booking
+      FLYWAY_USER: booking
+      FLYWAY_PASSWORD: booking
+    volumes:
+      - ./migrations/booking:/flyway/sql:ro
+    command: ["migrate"]
+    depends_on:
+      booking-db:
+        condition: service_healthy
+
+  flight:
+    build:
+      context: .
+      args:
+        SERVICE: flight
+    environment:
+      DATABASE_URL: postgres://flight:flight@flight-db:5432/flight?sslmode=disable
+      FLIGHT_API_KEY: ${FLIGHT_API_KEY:?FLIGHT_API_KEY must be set}
+      GRPC_ADDR: ":50051"
+    ports:
+      - "127.0.0.1:50051:50051"
+    depends_on:
+      flight-migrate:
+        condition: service_completed_successfully
+
+  booking:
+    build:
+      context: .
+      args:
+        SERVICE: booking
+    environment:
+      DATABASE_URL: postgres://booking:booking@booking-db:5432/booking?sslmode=disable
+      FLIGHT_API_KEY: ${FLIGHT_API_KEY:?FLIGHT_API_KEY must be set}
+      FLIGHT_GRPC_ADDR: flight:50051
+      HTTP_ADDR: ":8080"
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      booking-migrate:
+        condition: service_completed_successfully
+      flight:
+        condition: service_started
+
+volumes:
+  flight-data:
+  booking-data:
